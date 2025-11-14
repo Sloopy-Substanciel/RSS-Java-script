@@ -1,0 +1,243 @@
+---
+layout: null
+---
+
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Index du site</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      padding: 1.5rem;
+      background: #f5f5f5;
+      color: #222;
+    }
+
+    h1 {
+      margin-top: 0;
+      font-size: 1.8rem;
+    }
+
+    #status {
+      margin: 0.5rem 0 1rem;
+      font-size: 0.9rem;
+      color: #555;
+    }
+
+    .tree {
+      background: #fff;
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+      max-width: 900px;
+      overflow-x: auto;
+    }
+
+    ul {
+      list-style: none;
+      padding-left: 1rem;
+      margin: 0.25rem 0;
+    }
+
+    li {
+      margin: 0.15rem 0;
+      line-height: 1.4;
+    }
+
+    .folder, .file {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      font-size: 0.95rem;
+    }
+
+    .folder-toggle {
+      cursor: pointer;
+      user-select: none;
+      margin-right: 0.25rem;
+      font-size: 0.9rem;
+    }
+
+    .folder-name {
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .file a {
+      text-decoration: none;
+      color: #0b5ed7;
+      word-break: break-all;
+    }
+
+    .file a:hover {
+      text-decoration: underline;
+    }
+
+    .muted {
+      color: #777;
+      font-size: 0.85rem;
+    }
+
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <h1>Index des pages du site</h1>
+  <p id="status">Génération de l’arborescence…</p>
+  <div class="tree" id="tree"></div>
+
+  <!-- On laisse Jekyll générer une liste des pages disponibles -->
+  <script>
+    // Tableau généré par Jekyll : toutes les pages connues de GitHub Pages
+    const PAGES = [
+    {% assign pages = site.pages | sort: "path" %}
+    {% for page in pages %}
+      {% assign ext = page.path | split: "." | last %}
+      {% if ext == "html" or ext == "htm" or ext == "md" %}
+        {% unless page.url == "/" %}
+          {
+            url: "{{ page.url }}",
+            path: "{{ page.path }}"
+          },
+        {% endunless %}
+      {% endif %}
+    {% endfor %}
+    ];
+
+    const IGNORE_PREFIXES = [
+      "_site/",
+      "_layouts/",
+      "_includes/",
+      "_sass/"
+    ];
+
+    const statusEl = document.getElementById("status");
+    const treeEl   = document.getElementById("tree");
+
+    function shouldIgnore(path) {
+      return IGNORE_PREFIXES.some(prefix => path.startsWith(prefix));
+    }
+
+    // Construction d'un arbre JS à partir des chemins
+    function buildTreeStructure(pages) {
+      const root = {};
+
+      for (const page of pages) {
+        if (!page.path) continue;
+        const path = page.path;
+        if (shouldIgnore(path)) continue;
+
+        const parts = path.split("/");
+        let node = root;
+
+        for (let i = 0; i < parts.length; i++) {
+          const part = parts[i];
+          if (!part) continue;
+
+          const isLast = (i === parts.length - 1);
+
+          if (isLast) {
+            // fichier
+            node[part] = node[part] || { __type: "file", page };
+          } else {
+            // dossier
+            node[part] = node[part] || { __type: "dir", __children: {} };
+            node = node[part].__children;
+          }
+        }
+      }
+
+      return root;
+    }
+
+    function renderTree(obj) {
+      const ul = document.createElement("ul");
+
+      // Dossiers d'abord, puis fichiers
+      const keys = Object.keys(obj).sort((a, b) => a.localeCompare(b, "fr"));
+
+      const dirs = keys.filter(k => obj[k].__type === "dir");
+      const files = keys.filter(k => obj[k].__type === "file");
+
+      // Dossiers
+      for (const name of dirs) {
+        const item = obj[name];
+        const li = document.createElement("li");
+
+        const toggle = document.createElement("span");
+        toggle.textContent = "▸";
+        toggle.className = "folder-toggle";
+
+        const label = document.createElement("span");
+        label.textContent = name;
+        label.className = "folder-name";
+
+        const header = document.createElement("span");
+        header.className = "folder";
+        header.appendChild(toggle);
+        header.appendChild(label);
+
+        const subContainer = document.createElement("div");
+        subContainer.classList.add("hidden");
+
+        li.appendChild(header);
+        li.appendChild(subContainer);
+        ul.appendChild(li);
+
+        header.addEventListener("click", () => {
+          if (subContainer.childElementCount === 0) {
+            const subTree = renderTree(item.__children);
+            subContainer.appendChild(subTree);
+          }
+          const isHidden = subContainer.classList.toggle("hidden");
+          toggle.textContent = isHidden ? "▸" : "▾";
+        });
+      }
+
+      // Fichiers
+      for (const name of files) {
+        const item = obj[name];
+        const li = document.createElement("li");
+        const div = document.createElement("span");
+        div.className = "file";
+
+        const link = document.createElement("a");
+        link.href = item.page.url;
+        link.textContent = name;
+
+        div.appendChild(link);
+        li.appendChild(div);
+        ul.appendChild(li);
+      }
+
+      if (dirs.length === 0 && files.length === 0) {
+        const li = document.createElement("li");
+        li.innerHTML = `<span class="muted">(vide)</span>`;
+        ul.appendChild(li);
+      }
+
+      return ul;
+    }
+
+    (function init() {
+      try {
+        const filtered = PAGES.filter(p => p && p.path);
+        const treeData = buildTreeStructure(filtered);
+        const treeDom = renderTree(treeData);
+        treeEl.appendChild(treeDom);
+        statusEl.textContent = "Arborescence générée automatiquement (sans API).";
+      } catch (e) {
+        console.error(e);
+        statusEl.textContent = "Erreur lors de la génération de l’index.";
+      }
+    })();
+  </script>
+</body>
+</html>
