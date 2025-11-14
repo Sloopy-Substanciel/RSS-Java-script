@@ -18,3 +18,4 @@ et a la fin oublie pas ca:
 </html>
 
 lien du site https://sloopy-substanciel.github.io/RSS-Java-script/
+Lien RSS du site : https://fetchrss.com/feed/aOPClrIEWMPjaRdclQIxdaMy.rss
