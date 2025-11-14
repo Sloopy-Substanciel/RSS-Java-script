@@ -1,7 +1,3 @@
----
-layout: null
----
-
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -90,32 +86,21 @@ layout: null
 </head>
 <body>
   <h1>Index des pages du site</h1>
-  <p id="status">Génération de l’arborescence…</p>
+  <p id="status">Chargement de l’arborescence…</p>
   <div class="tree" id="tree"></div>
 
-  <!-- On laisse Jekyll générer une liste des pages disponibles -->
   <script>
-    // Tableau généré par Jekyll : toutes les pages connues de GitHub Pages
-    const PAGES = [
-    {% assign pages = site.pages | sort: "path" %}
-    {% for page in pages %}
-      {% assign ext = page.path | split: "." | last %}
-      {% if ext == "html" or ext == "htm" or ext == "md" %}
-        {% unless page.url == "/" %}
-          {
-            url: "{{ page.url }}",
-            path: "{{ page.path }}"
-          },
-        {% endunless %}
-      {% endif %}
-    {% endfor %}
-    ];
+    // 🔧 À PERSONNALISER
+    const REPO_OWNER = "Sloopy-Substanciel";
+    const REPO_NAME  = "RSS-Java-script";     // ex: "mon-site"
+    const BRANCH     = "main";         // ou "master"
 
+    // Dossiers à ignorer dans l’arbo
     const IGNORE_PREFIXES = [
-      "_site/",
-      "_layouts/",
-      "_includes/",
-      "_sass/"
+      ".github/",
+      ".git/",
+      "node_modules/",
+      "_site/"
     ];
 
     const statusEl = document.getElementById("status");
@@ -125,15 +110,48 @@ layout: null
       return IGNORE_PREFIXES.some(prefix => path.startsWith(prefix));
     }
 
-    // Construction d'un arbre JS à partir des chemins
+    async function fetchRepoTree() {
+      // 1) Récupérer le dernier commit
+      const commitRes = await fetch(
+        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/commits/${BRANCH}`
+      );
+      if (!commitRes.ok) throw new Error("Impossible de récupérer le commit");
+      const commit = await commitRes.json();
+      const treeSha = commit.commit.tree.sha;
+
+      // 2) Récupérer la tree complète
+      const treeRes = await fetch(
+        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/git/trees/${treeSha}?recursive=1`
+      );
+      if (!treeRes.ok) throw new Error("Impossible de récupérer la tree du repo");
+      const tree = await treeRes.json();
+
+      // On garde seulement les fichiers .html, .htm, .md
+      const pages = tree.tree
+        .filter(item => item.type === "blob")
+        .filter(item => {
+          const path = item.path;
+          if (shouldIgnore(path)) return false;
+          const lower = path.toLowerCase();
+          return (
+            lower.endsWith(".html") ||
+            lower.endsWith(".htm") ||
+            lower.endsWith(".md")
+          );
+        })
+        .map(item => ({
+          path: item.path,
+          url: "/" + item.path.replace(/index\.html?$/i, "")
+        }));
+
+      return pages;
+    }
+
     function buildTreeStructure(pages) {
       const root = {};
 
       for (const page of pages) {
-        if (!page.path) continue;
         const path = page.path;
-        if (shouldIgnore(path)) continue;
-
         const parts = path.split("/");
         let node = root;
 
@@ -144,10 +162,8 @@ layout: null
           const isLast = (i === parts.length - 1);
 
           if (isLast) {
-            // fichier
             node[part] = node[part] || { __type: "file", page };
           } else {
-            // dossier
             node[part] = node[part] || { __type: "dir", __children: {} };
             node = node[part].__children;
           }
@@ -159,8 +175,6 @@ layout: null
 
     function renderTree(obj) {
       const ul = document.createElement("ul");
-
-      // Dossiers d'abord, puis fichiers
       const keys = Object.keys(obj).sort((a, b) => a.localeCompare(b, "fr"));
 
       const dirs = keys.filter(k => obj[k].__type === "dir");
@@ -226,13 +240,14 @@ layout: null
       return ul;
     }
 
-    (function init() {
+    (async function init() {
       try {
-        const filtered = PAGES.filter(p => p && p.path);
-        const treeData = buildTreeStructure(filtered);
+        statusEl.textContent = "Chargement des pages depuis le dépôt GitHub…";
+        const pages = await fetchRepoTree();
+        const treeData = buildTreeStructure(pages);
         const treeDom = renderTree(treeData);
         treeEl.appendChild(treeDom);
-        statusEl.textContent = "Arborescence générée automatiquement (sans API).";
+        statusEl.textContent = "Arborescence générée automatiquement (via l’API GitHub).";
       } catch (e) {
         console.error(e);
         statusEl.textContent = "Erreur lors de la génération de l’index.";
